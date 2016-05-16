@@ -1,4 +1,4 @@
-project(pvr.demo)
+project(pvr.home-system)
 
 cmake_minimum_required(VERSION 2.6)
 
@@ -17,9 +17,11 @@ include_directories(${kodiplatform_INCLUDE_DIRS}
 set(DEPLIBS ${kodiplatform_LIBRARIES}
             ${p8-platform_LIBRARIES})
 
-set(PVRDEMO_SOURCES src/client.cpp
-                    src/PVRDemoData.cpp)
+INCLUDE_EXTERNAL_MSPROJECT(common lib/common/common/common.vcxproj)
+include_directories(lib/common/common/src/)
 
-build_addon(pvr.demo PVRDEMO DEPLIBS)
+set(PVRHOMESYSTEM_SOURCES src/client.cpp)
+
+build_addon(pvr.home-system PVRHOMESYSTEM DEPLIBS)
 
 include(CPack)
