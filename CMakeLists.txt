@@ -18,9 +18,12 @@ set(DEPLIBS ${kodiplatform_LIBRARIES}
             ${p8-platform_LIBRARIES})
 
 INCLUDE_EXTERNAL_MSPROJECT(common lib/common/common/common.vcxproj)
-include_directories(lib/common/common/src/)
+include_directories(lib/common/common/src/
+                    lib/common/yami/include/)
 
-set(PVRHOMESYSTEM_SOURCES src/client.cpp)
+set(PVRHOMESYSTEM_SOURCES src/client.cpp
+                          src/pvrclient.cpp
+                          src/pvrclient.h)
 
 build_addon(pvr.home-system PVRHOMESYSTEM DEPLIBS)
 
