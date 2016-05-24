@@ -25,6 +25,9 @@ size_t remote_buf_pos_(0);
 
 int session_ = -1;
 
+home_system::yc_t _yc;
+home_system::discovery_t _discovery;
+
 void create()
 {
   _yc = home_system::yami_container::create();
@@ -134,5 +137,61 @@ void create()
 
 void destroy()
 {
-  delete m_data;
+  AGENT.unregister_object("player");
+
+  _discovery.reset();
+  _yc.reset();
+}
+
+int get_channels_num()
+{
+
+  size_t c = 50; // 5 seconds
+  while (c)
+  {
+    try
+    {
+      std::unique_ptr<yami::outgoing_message> message(AGENT.send(DISCOVERY.get("tv"), "tv", "get_channels"));
+      message->wait_for_completion(1000);
+      if (message->get_state() == yami::replied)
+      {
+        //XBMC->Log(LOG_DEBUG, "%s - Number of channels: %d", __FUNCTION__, message->get_reply().get_string_array_length("name"));
+        return message->get_reply().get_string_array_length("name");
+      }
+    }
+    catch (const home_system::service_not_found& e)
+    {
+      Sleep(100);
+      c--;
+    }
+  }
+  return -1;
+}
+
+void get_channels(std::function<void(int id, const std::string& name)> callback)
+{
+  size_t c = 50; // 5 seconds
+  while (c)
+  {
+    try
+    {
+      std::unique_ptr<yami::outgoing_message> message(AGENT.send(DISCOVERY.get("tv"), "tv", "get_channels"));
+      message->wait_for_completion(1000);
+      if (message->get_state() == yami::replied)
+      {
+        size_t s = message->get_reply().get_string_array_length("name");
+        int* channels = message->get_reply().get_integer_array("channel", s);
+
+        for (size_t i = 0; i < s; ++i)
+        {
+          callback(channels[i], message->get_reply().get_string_in_array("name", i));
+        }
+      }
+    }
+    catch (const home_system::service_not_found&)
+    {
+      c--;
+      Sleep(100);
+    }
+  }
 }

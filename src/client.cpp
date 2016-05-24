@@ -182,13 +182,13 @@ const char *GetBackendName(void)
 
 const char *GetBackendVersion(void)
 {
-  static CStdString strBackendVersion = "0.1";
+  static std::string strBackendVersion = "0.1";
   return strBackendVersion.c_str();
 }
 
 const char *GetConnectionString(void)
 {
-  static CStdString strConnectionString = "connected";
+  static std::string strConnectionString = "connected";
   return strConnectionString.c_str();
 }
 
@@ -206,41 +206,88 @@ PVR_ERROR GetDriveSpace(long long *iTotal, long long *iUsed)
 
 PVR_ERROR GetEPGForChannel(ADDON_HANDLE handle, const PVR_CHANNEL &channel, time_t iStart, time_t iEnd)
 {
-  if (m_data)
-    return m_data->GetEPGForChannel(handle, channel, iStart, iEnd);
+  //size_t c = 50; // 5 seconds
+  //while (c)
+  //{
+  //  try
+  //  {
+  //    //XBMC->Log(LOG_DEBUG, "GetEPGForChannel start %d end %d", iStart, iEnd);
+  //    yami::parameters params;
+  //    params.set_integer("channel", channel.iUniqueId);
+  //    std::unique_ptr<yami::outgoing_message> message(AGENT.send(DISCOVERY.get("tv"), "tv", "get_epg_data", params));
+  //    message->wait_for_completion(1000);
+  //    if (message->get_state() == yami::replied)
+  //    {
+  //      size_t s = message->get_reply().get_integer("event_num");
+  //      if (s > 0)
+  //      {
+  //        int* ids = message->get_reply().get_integer_array("id", s);
+  //        int* durations = message->get_reply().get_integer_array("duration", s);
+  //        long long* start_times = message->get_reply().get_long_long_array("start_time", s);
 
+
+  //        for (size_t i = 0; i < s; ++i)
+  //        {
+  //          //XBMC->Log(LOG_DEBUG, "start: %d duration: %d id: %d", start_times[i], durations[i], ids[i]);
+  //          if (start_times[i] > iStart && start_times[i] < iEnd)
+  //          {
+  //            EPG_TAG tag;
+  //            memset(&tag, 0, sizeof(EPG_TAG));
+
+  //            tag.iUniqueBroadcastId = ids[i];
+  //            string title = message->get_reply().get_string_in_array("name", i);
+  //            tag.strTitle = title.c_str();
+  //            string plot = message->get_reply().get_string_in_array("plot", i);
+  //            tag.strPlot = plot.c_str();
+  //            tag.iChannelNumber = channel.iUniqueId;
+  //            tag.startTime = start_times[i];
+  //            tag.endTime = start_times[i] + durations[i];
+  //            PVR->TransferEpgEntry(handle, &tag);
+  //          }
+  //        }
+  //      }
+
+  //      return PVR_ERROR_NO_ERROR;
+  //    }
+  //  }
+  //  catch (const home_system::service_not_found& e)
+  //  {
+  //    c--;
+  //    Sleep(100);
+  //  }
+  //}
+  //if (XBMC)
+  //  XBMC->Log(LOG_ERROR, "TV service not found [%s]", __FUNCTION__);
   return PVR_ERROR_SERVER_ERROR;
 }
 
 int GetChannelsAmount(void)
 {
-  if (m_data)
-    return m_data->GetChannelsAmount();
-
-  return -1;
+  return get_channels_num();
 }
 
 PVR_ERROR GetChannels(ADDON_HANDLE handle, bool bRadio)
 {
-  if (m_data)
-    return m_data->GetChannels(handle, bRadio);
+  get_channels([handle](int id, const std::string& name)
+  {
+    PVR_CHANNEL xbmcChannel;
+    memset(&xbmcChannel, 0, sizeof(PVR_CHANNEL));
 
-  return PVR_ERROR_SERVER_ERROR;
+    xbmcChannel.iUniqueId = id;
+    xbmcChannel.iChannelNumber = id;
+    strncpy(xbmcChannel.strChannelName, name.c_str(), name.length());
+
+    if (XBMC)
+      XBMC->Log(LOG_DEBUG, "%s - Channel: %d - %s", __FUNCTION__, id, name.c_str());
+
+    PVR->TransferChannelEntry(handle, &xbmcChannel);
+  });
+  
+  return PVR_ERROR_NO_ERROR;
 }
 
 bool OpenLiveStream(const PVR_CHANNEL &channel)
 {
-  if (m_data)
-  {
-    CloseLiveStream();
-
-    if (m_data->GetChannel(channel, m_currentChannel))
-    {
-      m_bIsPlaying = true;
-      return true;
-    }
-  }
-
   return false;
 }
 
@@ -263,25 +310,16 @@ PVR_ERROR GetStreamProperties(PVR_STREAM_PROPERTIES* pProperties)
 
 int GetChannelGroupsAmount(void)
 {
-  if (m_data)
-    return m_data->GetChannelGroupsAmount();
-
   return -1;
 }
 
 PVR_ERROR GetChannelGroups(ADDON_HANDLE handle, bool bRadio)
 {
-  if (m_data)
-    return m_data->GetChannelGroups(handle, bRadio);
-
   return PVR_ERROR_SERVER_ERROR;
 }
 
 PVR_ERROR GetChannelGroupMembers(ADDON_HANDLE handle, const PVR_CHANNEL_GROUP &group)
 {
-  if (m_data)
-    return m_data->GetChannelGroupMembers(handle, group);
-
   return PVR_ERROR_SERVER_ERROR;
 }
 
@@ -295,17 +333,11 @@ PVR_ERROR SignalStatus(PVR_SIGNAL_STATUS &signalStatus)
 
 int GetRecordingsAmount(bool deleted)
 {
-  if (m_data)
-    return m_data->GetRecordingsAmount(deleted);
-
   return -1;
 }
 
 PVR_ERROR GetRecordings(ADDON_HANDLE handle, bool deleted)
 {
-  if (m_data)
-    return m_data->GetRecordings(handle, deleted);
-
   return PVR_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -317,17 +349,11 @@ PVR_ERROR GetTimerTypes(PVR_TIMER_TYPE types[], int *size)
 
 int GetTimersAmount(void)
 {
-  if (m_data)
-    return m_data->GetTimersAmount();
-
   return -1;
 }
 
 PVR_ERROR GetTimers(ADDON_HANDLE handle)
 {
-  if (m_data)
-    return m_data->GetTimers(handle);
-
   /* TODO: Change implementation to get support for the timer features introduced with PVR API 1.9.7 */
   return PVR_ERROR_NOT_IMPLEMENTED;
 }
