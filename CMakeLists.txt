@@ -32,6 +32,7 @@ set(DEPLIBS ${kodiplatform_LIBRARIES}
             ${p8-platform_LIBRARIES}
 			common)
 
+# fixme todo boost and poco dependencies
 # fixme todo relative path			
 link_directories(d:/develop/pvr.home-system/lib/common/yami4/lib/)
 

@@ -23,12 +23,14 @@
 #include "kodi/xbmc_pvr_dll.h"
 #include <p8-platform/util/util.h>
 #include "pvrclient.h"
+#include <memory>
 
 using namespace ADDON;
 
 bool           m_bCreated       = false;
 ADDON_STATUS   m_CurStatus      = ADDON_STATUS_UNKNOWN;
 bool           m_bIsPlaying     = false;
+PVR_CONNECTION_STATE m_ConnState = PVR_CONNECTION_STATE_UNKNOWN;
 
 /* User adjustable settings are saved here.
  * Default values are defined inside client.h
@@ -39,6 +41,8 @@ std::string g_strClientPath           = "";
 
 CHelper_libXBMC_addon *XBMC           = NULL;
 CHelper_libXBMC_pvr   *PVR            = NULL;
+
+std::unique_ptr<home_system::pvr_client> g_pvr_client;
 
 extern "C" {
 
@@ -71,15 +75,14 @@ ADDON_STATUS ADDON_Create(void* hdl, void* props)
 
   XBMC->Log(LOG_DEBUG, "%s - Creating the Home System PVR add-on", __FUNCTION__);
 
-  create();
+  g_pvr_client.reset(new home_system::pvr_client());
 
-  m_CurStatus     = ADDON_STATUS_UNKNOWN;
   g_strUserPath   = pvrprops->strUserPath;
   g_strClientPath = pvrprops->strClientPath;
 
   ADDON_ReadSettings();
 
-
+  m_CurStatus = ADDON_STATUS_OK;
   m_bCreated = true;
   return ADDON_STATUS_OK;
 }
@@ -91,7 +94,7 @@ ADDON_STATUS ADDON_GetStatus()
 
 void ADDON_Destroy()
 {
-  destroy();
+  g_pvr_client.reset();
   m_bCreated = false;
   m_CurStatus = ADDON_STATUS_UNKNOWN;
 }
@@ -163,20 +166,20 @@ const char* GetMininumGUIAPIVersion(void)
 
 PVR_ERROR GetAddonCapabilities(PVR_ADDON_CAPABILITIES* pCapabilities)
 {
-  pCapabilities->bSupportsEPG             = true;
+  pCapabilities->bSupportsEPG             = false;
   pCapabilities->bSupportsTV              = true;
-  pCapabilities->bSupportsRadio           = true;
-  pCapabilities->bSupportsChannelGroups   = true;
-  pCapabilities->bSupportsRecordings      = true;
-  pCapabilities->bSupportsRecordingsUndelete = true;
-  pCapabilities->bSupportsTimers          = true;
+  pCapabilities->bSupportsRadio           = false;
+  pCapabilities->bSupportsRecordings      = false;
+  pCapabilities->bSupportsRecordingsUndelete = false;
+  pCapabilities->bSupportsTimers          = false;
+  pCapabilities->bHandlesInputStream = true;
 
   return PVR_ERROR_NO_ERROR;
 }
 
 const char *GetBackendName(void)
 {
-  static const char *strBackendName = "Home System pvr client add-on";
+  static const char *strBackendName = "Home System PVR Client add-on";
   return strBackendName;
 }
 
@@ -263,12 +266,12 @@ PVR_ERROR GetEPGForChannel(ADDON_HANDLE handle, const PVR_CHANNEL &channel, time
 
 int GetChannelsAmount(void)
 {
-  return get_channels_num();
+  return g_pvr_client->get_channels_num();
 }
 
 PVR_ERROR GetChannels(ADDON_HANDLE handle, bool bRadio)
 {
-  get_channels([handle](int id, const std::string& name)
+  g_pvr_client->get_channels([handle](int id, const std::string& name)
   {
     PVR_CHANNEL xbmcChannel;
     memset(&xbmcChannel, 0, sizeof(PVR_CHANNEL));
@@ -276,9 +279,6 @@ PVR_ERROR GetChannels(ADDON_HANDLE handle, bool bRadio)
     xbmcChannel.iUniqueId = id;
     xbmcChannel.iChannelNumber = id;
     strncpy(xbmcChannel.strChannelName, name.c_str(), name.length());
-
-    if (XBMC)
-      XBMC->Log(LOG_DEBUG, "%s - Channel: %d - %s", __FUNCTION__, id, name.c_str());
 
     PVR->TransferChannelEntry(handle, &xbmcChannel);
   });
@@ -288,12 +288,32 @@ PVR_ERROR GetChannels(ADDON_HANDLE handle, bool bRadio)
 
 bool OpenLiveStream(const PVR_CHANNEL &channel)
 {
-  return false;
+  if (XBMC)
+    XBMC->Log(LOG_DEBUG, "OpenLiveStream [%d]", channel.iChannelNumber);
+
+  if (g_pvr_client)
+  {
+    g_pvr_client->create_session(channel.iUniqueId);
+  }
+
+  return true;
+}
+
+int ReadLiveStream(unsigned char *pBuffer, unsigned int iBufferSize)
+{
+  if (XBMC)
+    XBMC->Log(LOG_DEBUG, "ReadLiveStream [%d]", iBufferSize);
+  int ret = g_pvr_client->read_data(pBuffer, iBufferSize);
+  if (XBMC)
+    XBMC->Log(LOG_DEBUG, "read_data [%d]", ret);
+  return ret;
 }
 
 void CloseLiveStream(void)
 {
-  m_bIsPlaying = false;
+  if (XBMC)
+    XBMC->Log(LOG_DEBUG, "CloseLiveStream");
+  g_pvr_client->destroy_session();
 }
 
 bool SwitchChannel(const PVR_CHANNEL &channel)
@@ -315,12 +335,12 @@ int GetChannelGroupsAmount(void)
 
 PVR_ERROR GetChannelGroups(ADDON_HANDLE handle, bool bRadio)
 {
-  return PVR_ERROR_SERVER_ERROR;
+  return PVR_ERROR_NOT_IMPLEMENTED;
 }
 
 PVR_ERROR GetChannelGroupMembers(ADDON_HANDLE handle, const PVR_CHANNEL_GROUP &group)
 {
-  return PVR_ERROR_SERVER_ERROR;
+  return PVR_ERROR_NOT_IMPLEMENTED;
 }
 
 PVR_ERROR SignalStatus(PVR_SIGNAL_STATUS &signalStatus)
@@ -374,7 +394,6 @@ long long PositionRecordedStream(void) { return -1; }
 long long LengthRecordedStream(void) { return 0; }
 void DemuxReset(void) {}
 void DemuxFlush(void) {}
-int ReadLiveStream(unsigned char *pBuffer, unsigned int iBufferSize) { return 0; }
 long long SeekLiveStream(long long iPosition, int iWhence /* = SEEK_SET */) { return -1; }
 long long PositionLiveStream(void) { return -1; }
 long long LengthLiveStream(void) { return -1; }
