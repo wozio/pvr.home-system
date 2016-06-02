@@ -211,15 +211,16 @@ namespace home_system
     session_ = message->get_reply().get_integer("session");
 
     if (session_ == -1)
-      throw runtime_error("Session id = -1");
+    {
+      auto reason = message->get_reply().get_string("reason");
+      throw runtime_error("Failed to create session because: " + reason);
+    }
   }
 
   int pvr_client::read_data(unsigned char *inbuf, unsigned int buf_size)
   {
     while (buffer_len_ == 0 || buffer_pos_ == buffer_len_)
-    {
-      Sleep(1);
-    }
+      Sleep(0);
     size_t size = buf_size;
 
     BYTE* buf = inbuf;

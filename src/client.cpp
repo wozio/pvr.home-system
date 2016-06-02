@@ -301,11 +301,7 @@ bool OpenLiveStream(const PVR_CHANNEL &channel)
 
 int ReadLiveStream(unsigned char *pBuffer, unsigned int iBufferSize)
 {
-  if (XBMC)
-    XBMC->Log(LOG_DEBUG, "ReadLiveStream [%d]", iBufferSize);
   int ret = g_pvr_client->read_data(pBuffer, iBufferSize);
-  if (XBMC)
-    XBMC->Log(LOG_DEBUG, "read_data [%d]", ret);
   return ret;
 }
 
