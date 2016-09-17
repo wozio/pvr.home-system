@@ -190,6 +190,56 @@ namespace home_system
     }
   }
 
+  void pvr_client::get_epg(int channel_id, long long start_time, long long end_time, std::function<void(epg_entry&)> callback)
+  {
+    size_t c = 50; // 5 seconds
+    while (c)
+    {
+      try
+      {
+        yami::parameters params;
+        params.set_integer("channel", channel_id);
+        params.set_long_long("start_time", start_time);
+        std::unique_ptr<yami::outgoing_message> message(AGENT.send(DISCOVERY.get("tv"), "tv", "get_epg_data", params));
+        message->wait_for_completion(1000);
+        if (message->get_state() == yami::replied)
+        {
+          size_t s = message->get_reply().get_integer("event_num");
+          if (s > 0)
+          {
+            int* ids = message->get_reply().get_integer_array("id", s);
+            int* durations = message->get_reply().get_integer_array("duration", s);
+            long long* start_times = message->get_reply().get_long_long_array("start_time", s);
+
+
+            for (size_t i = 0; i < s; ++i)
+            {
+              if (start_times[i] > start_time && start_times[i] < end_time)
+              {
+                epg_entry entry;
+
+                entry.id = ids[i];
+                entry.title = message->get_reply().get_string_in_array("name", i);
+                entry.plot = message->get_reply().get_string_in_array("plot", i);
+                entry.channel_id = channel_id;
+                entry.start = start_times[i];
+                entry.end = start_times[i] + durations[i];
+
+                callback(entry);
+              }
+            }
+          }
+        }
+        return;
+      }
+      catch (const home_system::service_not_found& e)
+      {
+        c--;
+        Sleep(100);
+      }
+    }
+  }
+
   void pvr_client::create_session(int id)
   {
     yami::parameters params;
@@ -224,7 +274,6 @@ namespace home_system
     size_t size = buf_size;
 
     BYTE* buf = inbuf;
-    //pSample->GetPointer(&buf);
 
     lock_guard<mutex> lock(buffer_mutex_);
 

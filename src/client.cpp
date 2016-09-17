@@ -166,11 +166,10 @@ const char* GetMininumGUIAPIVersion(void)
 
 PVR_ERROR GetAddonCapabilities(PVR_ADDON_CAPABILITIES* pCapabilities)
 {
-  pCapabilities->bSupportsEPG             = false;
+  pCapabilities->bSupportsEPG             = true;
   pCapabilities->bSupportsTV              = true;
   pCapabilities->bSupportsRadio           = false;
   pCapabilities->bSupportsRecordings      = false;
-  pCapabilities->bSupportsRecordingsUndelete = false;
   pCapabilities->bSupportsTimers          = false;
   pCapabilities->bHandlesInputStream = true;
 
@@ -204,64 +203,33 @@ PVR_ERROR GetDriveSpace(long long *iTotal, long long *iUsed)
 {
   *iTotal = 1024 * 1024 * 1024;
   *iUsed  = 0;
-  return PVR_ERROR_NO_ERROR;
+  return PVR_ERROR_NOT_IMPLEMENTED;
 }
 
 PVR_ERROR GetEPGForChannel(ADDON_HANDLE handle, const PVR_CHANNEL &channel, time_t iStart, time_t iEnd)
 {
-  //size_t c = 50; // 5 seconds
-  //while (c)
-  //{
-  //  try
-  //  {
-  //    //XBMC->Log(LOG_DEBUG, "GetEPGForChannel start %d end %d", iStart, iEnd);
-  //    yami::parameters params;
-  //    params.set_integer("channel", channel.iUniqueId);
-  //    std::unique_ptr<yami::outgoing_message> message(AGENT.send(DISCOVERY.get("tv"), "tv", "get_epg_data", params));
-  //    message->wait_for_completion(1000);
-  //    if (message->get_state() == yami::replied)
-  //    {
-  //      size_t s = message->get_reply().get_integer("event_num");
-  //      if (s > 0)
-  //      {
-  //        int* ids = message->get_reply().get_integer_array("id", s);
-  //        int* durations = message->get_reply().get_integer_array("duration", s);
-  //        long long* start_times = message->get_reply().get_long_long_array("start_time", s);
+  // better than compiling with 32 bit time_t ;)
+  long long start = iStart & 0xFFFFFFFF;
+  long long end = (iStart >> 32) & 0xFFFFFFFF;
 
+  //XBMC->Log(LOG_DEBUG, "Get EPG for channel %s (%d) %d->%d", channel.strChannelName, channel.iUniqueId, iStart, iEnd);
+  g_pvr_client->get_epg(channel.iUniqueId, start, end, [handle](home_system::epg_entry& entry)
+  {
+    XBMC->Log(LOG_DEBUG, "Got something: %s", entry.title.c_str());
 
-  //        for (size_t i = 0; i < s; ++i)
-  //        {
-  //          //XBMC->Log(LOG_DEBUG, "start: %d duration: %d id: %d", start_times[i], durations[i], ids[i]);
-  //          if (start_times[i] > iStart && start_times[i] < iEnd)
-  //          {
-  //            EPG_TAG tag;
-  //            memset(&tag, 0, sizeof(EPG_TAG));
+    EPG_TAG tag;
+    memset(&tag, 0, sizeof(EPG_TAG));
 
-  //            tag.iUniqueBroadcastId = ids[i];
-  //            string title = message->get_reply().get_string_in_array("name", i);
-  //            tag.strTitle = title.c_str();
-  //            string plot = message->get_reply().get_string_in_array("plot", i);
-  //            tag.strPlot = plot.c_str();
-  //            tag.iChannelNumber = channel.iUniqueId;
-  //            tag.startTime = start_times[i];
-  //            tag.endTime = start_times[i] + durations[i];
-  //            PVR->TransferEpgEntry(handle, &tag);
-  //          }
-  //        }
-  //      }
+    tag.iUniqueBroadcastId = entry.id;
+    tag.strTitle = entry.title.c_str();
+    tag.strPlot = entry.plot.c_str();
+    tag.iChannelNumber = entry.channel_id;
+    tag.startTime = entry.start;
+    tag.endTime = entry.end;
+    PVR->TransferEpgEntry(handle, &tag);
 
-  //      return PVR_ERROR_NO_ERROR;
-  //    }
-  //  }
-  //  catch (const home_system::service_not_found& e)
-  //  {
-  //    c--;
-  //    Sleep(100);
-  //  }
-  //}
-  //if (XBMC)
-  //  XBMC->Log(LOG_ERROR, "TV service not found [%s]", __FUNCTION__);
-  return PVR_ERROR_SERVER_ERROR;
+  });
+  return PVR_ERROR_NO_ERROR;
 }
 
 int GetChannelsAmount(void)

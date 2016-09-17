@@ -11,6 +11,16 @@ namespace home_system
     connected
   };
 
+  struct epg_entry
+  {
+    int channel_id;
+    int id;
+    std::string title;
+    std::string plot;
+    long long start;
+    long long end;
+  };
+
   class pvr_client
   {
   public:
@@ -19,8 +29,9 @@ namespace home_system
 
     int get_channels_num();
     void get_channels(std::function<void(int id, const std::string& name)> callback);
+    void get_epg(int channel_id, long long start_time, long long end_time, std::function<void(epg_entry&)> callback);
 
-    void create_session(int id);
+    void create_session(int channel_id);
     int read_data(unsigned char *inbuf, unsigned int buf_size);
     void destroy_session();
   };

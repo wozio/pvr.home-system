@@ -26,7 +26,7 @@ set(PVRHOMESYSTEM_SOURCES src/client.cpp
                           src/pvrclient.cpp
                           src/pvrclient.h)
 						  
-add_definitions(-D_ITERATOR_DEBUG_LEVEL=2 -DPOCO_STATIC)
+add_definitions(-D_ITERATOR_DEBUG_LEVEL=2 -DPOCO_STATIC -DDISABLE_LOGS)
 
 set(DEPLIBS ${kodiplatform_LIBRARIES}
             ${p8-platform_LIBRARIES}
