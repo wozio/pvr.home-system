@@ -208,14 +208,10 @@ PVR_ERROR GetDriveSpace(long long *iTotal, long long *iUsed)
 
 PVR_ERROR GetEPGForChannel(ADDON_HANDLE handle, const PVR_CHANNEL &channel, time_t iStart, time_t iEnd)
 {
-  // better than compiling with 32 bit time_t ;)
-  //long long start = iStart & 0xFFFFFFFF;
-  //long long end = (iStart >> 32) & 0xFFFFFFFF;
-
-  XBMC->Log(LOG_DEBUG, "Get EPG for channel %s (%d) %d->%d", channel.strChannelName, channel.iUniqueId, iStart, iEnd);
+  //XBMC->Log(LOG_DEBUG, "Get EPG for channel %s (%d) %d->%d", channel.strChannelName, channel.iUniqueId, iStart, iEnd);
   g_pvr_client->get_epg(channel.iUniqueId, iStart, iEnd, [handle](home_system::epg_entry& entry)
   {
-    XBMC->Log(LOG_DEBUG, "Got something: %s", entry.title.c_str());
+    //XBMC->Log(LOG_DEBUG, "Got something: %s", entry.title.c_str());
 
     EPG_TAG tag;
     memset(&tag, 0, sizeof(EPG_TAG));

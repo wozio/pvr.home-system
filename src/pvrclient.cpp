@@ -3,14 +3,11 @@
 
 #include "discovery.h"
 #include "yamicontainer.h"
-//#include "logger_init.h"
 
 #include <boost/circular_buffer.hpp>
 #include <boost/shared_array.hpp>
 #include <memory>
 #include <functional>
-
-//INITIALIZE_EASYLOGGINGPP
 
 using namespace std;
 
