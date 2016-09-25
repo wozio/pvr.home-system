@@ -265,7 +265,11 @@ bool OpenLiveStream(const PVR_CHANNEL &channel)
 
 int ReadLiveStream(unsigned char *pBuffer, unsigned int iBufferSize)
 {
+  if (XBMC)
+    XBMC->Log(LOG_DEBUG, "ReadLiveStream [%d]", iBufferSize);
   int ret = g_pvr_client->read_data(pBuffer, iBufferSize);
+  if (XBMC)
+    XBMC->Log(LOG_DEBUG, "Read [%d]", ret);
   return ret;
 }
 
@@ -281,6 +285,53 @@ bool SwitchChannel(const PVR_CHANNEL &channel)
   CloseLiveStream();
 
   return OpenLiveStream(channel);
+}
+
+long long SeekLiveStream(long long iPosition, int iWhence /* = SEEK_SET */)
+{
+  if (XBMC)
+    XBMC->Log(LOG_DEBUG, "SeekLiveStream %d %d", iPosition, iWhence);
+  return g_pvr_client->seek(iPosition);
+}
+
+long long PositionLiveStream(void)
+{
+  auto pos = g_pvr_client->get_buffer_position();
+  if (XBMC)
+    XBMC->Log(LOG_DEBUG, "PositionLiveStream %d", pos);
+  return pos;
+}
+
+long long LengthLiveStream(void)
+{
+  auto len = g_pvr_client->get_buffer_length();
+  if (XBMC)
+    XBMC->Log(LOG_DEBUG, "LengthLiveStream %d", len);
+  return len;
+}
+
+void PauseStream(bool bPaused)
+{
+  if (XBMC)
+    XBMC->Log(LOG_DEBUG, "PauseStream %d", bPaused);
+  if (bPaused)
+  {
+    g_pvr_client->pause();
+  }
+  else
+  {
+    g_pvr_client->play();
+  }
+}
+
+bool CanPauseStream(void)
+{
+  return true;
+}
+
+bool CanSeekStream(void)
+{
+  return true;
 }
 
 PVR_ERROR GetStreamProperties(PVR_STREAM_PROPERTIES* pProperties)
@@ -354,9 +405,6 @@ long long PositionRecordedStream(void) { return -1; }
 long long LengthRecordedStream(void) { return 0; }
 void DemuxReset(void) {}
 void DemuxFlush(void) {}
-long long SeekLiveStream(long long iPosition, int iWhence /* = SEEK_SET */) { return -1; }
-long long PositionLiveStream(void) { return -1; }
-long long LengthLiveStream(void) { return -1; }
 const char * GetLiveStreamURL(const PVR_CHANNEL &channel) { return ""; }
 PVR_ERROR DeleteRecording(const PVR_RECORDING &recording) { return PVR_ERROR_NOT_IMPLEMENTED; }
 PVR_ERROR RenameRecording(const PVR_RECORDING &recording) { return PVR_ERROR_NOT_IMPLEMENTED; }
@@ -370,9 +418,6 @@ PVR_ERROR UpdateTimer(const PVR_TIMER &timer) { return PVR_ERROR_NOT_IMPLEMENTED
 void DemuxAbort(void) {}
 DemuxPacket* DemuxRead(void) { return NULL; }
 unsigned int GetChannelSwitchDelay(void) { return 0; }
-void PauseStream(bool bPaused) {}
-bool CanPauseStream(void) { return false; }
-bool CanSeekStream(void) { return false; }
 bool SeekTime(int,bool,double*) { return false; }
 void SetSpeed(int) {};
 bool IsTimeshifting(void) { return false; }

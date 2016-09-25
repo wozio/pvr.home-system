@@ -21,10 +21,11 @@ boost::circular_buffer<boost::shared_array<BYTE> > buffer_(BUFMAX);
 size_t buffer_len_(0);
 size_t buffer_pos_(0);
 std::mutex buffer_mutex_;
-size_t remote_buf_len_(0);
-size_t remote_buf_pos_(0);
+long long remote_buf_len_(0);
+long long remote_buf_pos_(0);
 
 int session_ = -1;
+bool seeking_ = false;
 
 home_system::yc_t _yc;
 home_system::discovery_t _discovery;
@@ -35,6 +36,7 @@ namespace home_system
   {
     _yc = yami_container::create();
     _discovery = discovery::create();
+    seeking_ = false;
 
     auto func = [&](yami::incoming_message& im)
     {
@@ -42,9 +44,15 @@ namespace home_system
       {
         if (session_ != -1)
         {
+          // discard parts if in the middle of seeking
+          if (seeking_)
+          {
+            return;
+          }
           try
           {
-            remote_buf_len_ = im.get_parameters().get_integer("buffer_size");
+            remote_buf_len_ = im.get_parameters().get_long_long("size");
+            remote_buf_pos_ = im.get_parameters().get_long_long("position");
             size_t len = 0;
             BYTE* buf = (BYTE*)im.get_parameters().get_binary("payload", len);
 
@@ -69,9 +77,8 @@ namespace home_system
                 len -= available_in_tmp;
                 buf += available_in_tmp;
 
-                lock_guard<mutex> lock(buffer_mutex_);
-
                 // add it to main buffer
+                lock_guard<mutex> lock(buffer_mutex_);
                 buffer_.push_back(tmp_buf_);
                 buffer_len_ += BUFSIZE;
                 tmp_len_ = 0;
@@ -85,13 +92,18 @@ namespace home_system
               }
             }
 
-            lock_guard<mutex> lock(buffer_mutex_);
             // removing already read elements
+            lock_guard<mutex> lock(buffer_mutex_);
             while (buffer_pos_ >= BUFSIZE)
             {
               buffer_.erase_begin(1);
               buffer_pos_ -= BUFSIZE;
               buffer_len_ -= BUFSIZE;
+            }
+
+            if (buffer_.size() > BUFMAX * 0.66)
+            {
+
             }
           }
           catch (const std::exception& e)
@@ -132,6 +144,15 @@ namespace home_system
 
     _discovery.reset();
     _yc.reset();
+    session_ = -1;
+    seeking_ = false;
+    lock_guard<mutex> lock(buffer_mutex_);
+    tmp_len_ = 0;
+    buffer_len_ = 0;
+    buffer_pos_ = 0;
+    remote_buf_len_ = 0;
+    remote_buf_pos_ = 0;
+    buffer_.clear();
   }
 
   int pvr_client::get_channels_num()
@@ -267,6 +288,7 @@ namespace home_system
 
   int pvr_client::read_data(unsigned char *inbuf, unsigned int buf_size)
   {
+    int i = 0;
     while (buffer_len_ == 0 || buffer_pos_ == buffer_len_)
       Sleep(0);
     size_t size = buf_size;
@@ -304,6 +326,58 @@ namespace home_system
     return size;
   }
 
+  void pvr_client::play()
+  {
+    yami::parameters params;
+
+    params.set_integer("session", session_);
+
+    AGENT.send_one_way(DISCOVERY.get("tv"), "tv", "play_session", params);
+  }
+
+  void pvr_client::pause()
+  {
+    yami::parameters params;
+
+    params.set_integer("session", session_);
+
+    AGENT.send_one_way(DISCOVERY.get("tv"), "tv", "pause_session", params);
+  }
+
+  long long pvr_client::seek(long long pos)
+  {
+    seeking_ = true;
+
+    lock_guard<mutex> lock(buffer_mutex_);
+
+    yami::parameters params;
+
+    params.set_integer("session", session_);
+    params.set_long_long("position", pos);
+
+    unique_ptr<yami::outgoing_message> message(AGENT.send(DISCOVERY.get("tv"), "tv", "seek_session", params));
+
+    message->wait_for_completion(1000);
+
+    if (message->get_state() != yami::replied)
+    {
+      throw runtime_error("No reply in time");
+    }
+
+    tmp_len_ = 0;
+    buffer_len_ = 0;
+    buffer_pos_ = 0;
+    remote_buf_pos_ = 0;
+
+    buffer_.clear();
+
+    remote_buf_pos_ = message->get_reply().get_long_long("position");
+
+    seeking_ = false;
+
+    return remote_buf_pos_;
+  }
+
   void pvr_client::destroy_session()
   {
     if (session_ != -1)
@@ -321,8 +395,20 @@ namespace home_system
       tmp_len_ = 0;
       buffer_len_ = 0;
       buffer_pos_ = 0;
+      remote_buf_len_ = 0;
+      remote_buf_pos_ = 0;
 
       buffer_.clear();
     }
+  }
+
+  long long pvr_client::get_buffer_length()
+  {
+    return remote_buf_len_;
+  }
+
+  long long pvr_client::get_buffer_position()
+  {
+    return remote_buf_pos_ - buffer_len_ + buffer_pos_;
   }
 }

@@ -34,5 +34,14 @@ namespace home_system
     void create_session(int channel_id);
     int read_data(unsigned char *inbuf, unsigned int buf_size);
     void destroy_session();
+
+    void play();
+    void pause();
+
+    long long seek(long long pos);
+
+    long long get_buffer_length();
+    long long get_buffer_position();
+  private:
   };
 }
