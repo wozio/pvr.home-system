@@ -42,6 +42,12 @@ namespace home_system
 
     long long get_buffer_length();
     long long get_buffer_position();
+
+    long long get_buffer_time_start();
+    long long get_buffer_time_end();
+    long long get_playing_time();
+
+    bool is_timeshifting();
   private:
   };
 }

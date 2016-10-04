@@ -220,8 +220,8 @@ PVR_ERROR GetEPGForChannel(ADDON_HANDLE handle, const PVR_CHANNEL &channel, time
     tag.strTitle = entry.title.c_str();
     tag.strPlot = entry.plot.c_str();
     tag.iChannelNumber = entry.channel_id;
-    tag.startTime = entry.start;
-    tag.endTime = entry.end;
+    tag.startTime = (time_t)entry.start;
+    tag.endTime = (time_t)entry.end;
     PVR->TransferEpgEntry(handle, &tag);
 
   });
@@ -265,11 +265,7 @@ bool OpenLiveStream(const PVR_CHANNEL &channel)
 
 int ReadLiveStream(unsigned char *pBuffer, unsigned int iBufferSize)
 {
-  if (XBMC)
-    XBMC->Log(LOG_DEBUG, "ReadLiveStream [%d]", iBufferSize);
   int ret = g_pvr_client->read_data(pBuffer, iBufferSize);
-  if (XBMC)
-    XBMC->Log(LOG_DEBUG, "Read [%d]", ret);
   return ret;
 }
 
@@ -289,9 +285,10 @@ bool SwitchChannel(const PVR_CHANNEL &channel)
 
 long long SeekLiveStream(long long iPosition, int iWhence /* = SEEK_SET */)
 {
+  auto p = g_pvr_client->seek(iPosition);
   if (XBMC)
-    XBMC->Log(LOG_DEBUG, "SeekLiveStream %d %d", iPosition, iWhence);
-  return g_pvr_client->seek(iPosition);
+    XBMC->Log(LOG_DEBUG, "SeekLiveStream %lld->%lld %d", iPosition, p, iWhence);
+  return p;
 }
 
 long long PositionLiveStream(void)
@@ -338,6 +335,43 @@ PVR_ERROR GetStreamProperties(PVR_STREAM_PROPERTIES* pProperties)
 {
   return PVR_ERROR_NOT_IMPLEMENTED;
 }
+
+bool IsTimeshifting(void)
+{
+  return g_pvr_client->is_timeshifting();
+}
+
+bool IsRealTimeStream(void)
+{
+  return !g_pvr_client->is_timeshifting();
+}
+
+time_t GetPlayingTime()
+{
+  auto t = g_pvr_client->get_playing_time();
+  if (XBMC)
+    XBMC->Log(LOG_DEBUG, "GetPlayingTime %lld", t);
+  return (time_t)t;
+}
+
+time_t GetBufferTimeStart()
+{
+  auto t = g_pvr_client->get_buffer_time_start();
+  if (XBMC)
+    XBMC->Log(LOG_DEBUG, "GetBufferTimeStart %lld", t);
+  return (time_t)t;
+}
+
+time_t GetBufferTimeEnd()
+{
+  auto t = g_pvr_client->get_buffer_time_end();
+  if (XBMC)
+    XBMC->Log(LOG_DEBUG, "GetBufferTimeEnd %lld", t);
+  return (time_t)t;
+}
+
+
+
 
 int GetChannelGroupsAmount(void)
 {
@@ -420,11 +454,6 @@ DemuxPacket* DemuxRead(void) { return NULL; }
 unsigned int GetChannelSwitchDelay(void) { return 0; }
 bool SeekTime(int,bool,double*) { return false; }
 void SetSpeed(int) {};
-bool IsTimeshifting(void) { return false; }
-bool IsRealTimeStream(void) { return true; }
-time_t GetPlayingTime() { return 0; }
-time_t GetBufferTimeStart() { return 0; }
-time_t GetBufferTimeEnd() { return 0; }
 PVR_ERROR UndeleteRecording(const PVR_RECORDING& recording) { return PVR_ERROR_NOT_IMPLEMENTED; }
 PVR_ERROR DeleteAllRecordingsFromTrash() { return PVR_ERROR_NOT_IMPLEMENTED; }
 PVR_ERROR SetEPGTimeFrame(int) { return PVR_ERROR_NOT_IMPLEMENTED; }

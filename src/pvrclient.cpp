@@ -3,29 +3,33 @@
 
 #include "discovery.h"
 #include "yamicontainer.h"
-
-#include <boost/circular_buffer.hpp>
 #include <boost/shared_array.hpp>
 #include <memory>
 #include <functional>
+#include <chrono>
 
 using namespace std;
 
 #define BUFSIZE 18800
-#define BUFMAX 1000
-#define BUFMAXSIZE = BUFSIZE * BUFMAX
 
 size_t tmp_len_(0);
-boost::shared_array<BYTE> tmp_buf_;
-boost::circular_buffer<boost::shared_array<BYTE> > buffer_(BUFMAX);
-size_t buffer_len_(0);
-size_t buffer_pos_(0);
+boost::shared_array<unsigned char> tmp_buf_;
+std::list<boost::shared_array<unsigned char>> buffer_;
 std::mutex buffer_mutex_;
+std::condition_variable data_written_;
+
 long long remote_buf_len_(0);
 long long remote_buf_pos_(0);
 
+time_t begin_time_(0);
+time_t behind_end_time_(0);
+time_t current_time_(0);
+time_t end_time_(0);
+
 int session_ = -1;
 bool seeking_ = false;
+bool receiving_ = false;
+bool playing_;
 
 home_system::yc_t _yc;
 home_system::discovery_t _discovery;
@@ -37,6 +41,8 @@ namespace home_system
     _yc = yami_container::create();
     _discovery = discovery::create();
     seeking_ = false;
+    receiving_ = true;
+    playing_ = true;
 
     auto func = [&](yami::incoming_message& im)
     {
@@ -51,14 +57,28 @@ namespace home_system
           }
           try
           {
+            lock_guard<mutex> lock(buffer_mutex_);
+
             remote_buf_len_ = im.get_parameters().get_long_long("size");
-            remote_buf_pos_ = im.get_parameters().get_long_long("position");
+            begin_time_ = im.get_parameters().get_long_long("begin_time");
+            time_t ct = im.get_parameters().get_long_long("current_time");
+            end_time_ = im.get_parameters().get_long_long("end_time");
+
+            if (playing_)
+            {
+
+            }
+            else
+            {
+
+            }
+
             size_t len = 0;
-            BYTE* buf = (BYTE*)im.get_parameters().get_binary("payload", len);
+            unsigned char* buf = (unsigned char*)im.get_parameters().get_binary("payload", len);
 
             if (tmp_len_ == 0)
             {
-              tmp_buf_.reset(new BYTE[BUFSIZE]);
+              tmp_buf_.reset(new unsigned char[BUFSIZE]);
             }
 
             // loop on arrived data until all gets copied into buffer
@@ -78,10 +98,9 @@ namespace home_system
                 buf += available_in_tmp;
 
                 // add it to main buffer
-                lock_guard<mutex> lock(buffer_mutex_);
                 buffer_.push_back(tmp_buf_);
-                buffer_len_ += BUFSIZE;
                 tmp_len_ = 0;
+                remote_buf_pos_ += BUFSIZE;
               }
               else
               {
@@ -91,19 +110,16 @@ namespace home_system
                 len = 0;
               }
             }
-
-            // removing already read elements
-            lock_guard<mutex> lock(buffer_mutex_);
-            while (buffer_pos_ >= BUFSIZE)
+            data_written_.notify_all();
+            if (receiving_)
             {
-              buffer_.erase_begin(1);
-              buffer_pos_ -= BUFSIZE;
-              buffer_len_ -= BUFSIZE;
-            }
-
-            if (buffer_.size() > BUFMAX * 0.66)
-            {
-
+              if (buffer_.size() > 10)
+              {
+                yami::parameters params;
+                params.set_integer("session", session_);
+                AGENT.send_one_way(DISCOVERY.get("tv"), "tv", "pause_session", params);
+                receiving_ = false;
+              }
             }
           }
           catch (const std::exception& e)
@@ -146,10 +162,9 @@ namespace home_system
     _yc.reset();
     session_ = -1;
     seeking_ = false;
+    receiving_ = false;
     lock_guard<mutex> lock(buffer_mutex_);
     tmp_len_ = 0;
-    buffer_len_ = 0;
-    buffer_pos_ = 0;
     remote_buf_len_ = 0;
     remote_buf_pos_ = 0;
     buffer_.clear();
@@ -261,6 +276,9 @@ namespace home_system
 
   void pvr_client::create_session(int id)
   {
+    receiving_ = true;
+    seeking_ = false;
+
     yami::parameters params;
 
     params.set_integer("channel", id);
@@ -288,60 +306,51 @@ namespace home_system
 
   int pvr_client::read_data(unsigned char *inbuf, unsigned int buf_size)
   {
-    int i = 0;
-    while (buffer_len_ == 0 || buffer_pos_ == buffer_len_)
-      Sleep(0);
-    size_t size = buf_size;
-
-    BYTE* buf = inbuf;
-
-    lock_guard<mutex> lock(buffer_mutex_);
-
-    if (size > buffer_len_ - buffer_pos_)
+    unique_lock<mutex> lock(buffer_mutex_);
+    if (receiving_)
     {
-      size = buffer_len_ - buffer_pos_;
+      // wait for some data to arrive
+      if (!data_written_.wait_for(lock, 10s, [&]() {return buffer_.size() > 0; }))
+      {
+        return 0;
+      }
     }
 
-    size_t read_size = size;
+    size_t size = 0;
 
-    while (read_size != 0)
+    while (buf_size >= BUFSIZE && buffer_.size() > 0)
     {
-      size_t buffer_index = buffer_pos_ / BUFSIZE;
-      size_t local_buf_pos = buffer_pos_ - buffer_index * BUFSIZE;
-      size_t to_read;
-      if (read_size >= BUFSIZE)
+      memcpy(inbuf, buffer_.front().get(), BUFSIZE);
+      buf_size -= BUFSIZE;
+      size += BUFSIZE;
+      inbuf += BUFSIZE;
+      buffer_.pop_front();
+    }
+    if (!receiving_)
+    {
+      if (buffer_.size() == 0)
       {
-        to_read = BUFSIZE - local_buf_pos;
+        yami::parameters params;
+        params.set_integer("session", session_);
+        AGENT.send_one_way(DISCOVERY.get("tv"), "tv", "play_session", params);
+        receiving_ = true;
       }
-      else
-      {
-        to_read = read_size;
-      }
-      //XBMC->Log(LOG_DEBUG, "Read: read_size: %d, buffer_index: %d, buffer pos=%d, to_read=%d, buffer size=%d, buffer_len=%d", read_size, buffer_index, buffer_pos_, to_read, buffer_.size(), buffer_len_);
-      memcpy(buf, buffer_[buffer_index].get() + local_buf_pos, to_read);
-      buffer_pos_ += to_read;
-      read_size -= to_read;
-      buf += to_read;
     }
     return size;
   }
 
   void pvr_client::play()
   {
-    yami::parameters params;
-
-    params.set_integer("session", session_);
-
-    AGENT.send_one_way(DISCOVERY.get("tv"), "tv", "play_session", params);
+    lock_guard<mutex> lock(buffer_mutex_);
+    playing_ = true;
+    behind_end_time_ = end_time_ - current_time_;
   }
 
   void pvr_client::pause()
   {
-    yami::parameters params;
-
-    params.set_integer("session", session_);
-
-    AGENT.send_one_way(DISCOVERY.get("tv"), "tv", "pause_session", params);
+    lock_guard<mutex> lock(buffer_mutex_);
+    playing_ = false;
+    current_time_ = end_time_ - behind_end_time_;
   }
 
   long long pvr_client::seek(long long pos)
@@ -365,15 +374,27 @@ namespace home_system
     }
 
     tmp_len_ = 0;
-    buffer_len_ = 0;
-    buffer_pos_ = 0;
-    remote_buf_pos_ = 0;
-
     buffer_.clear();
 
     remote_buf_pos_ = message->get_reply().get_long_long("position");
+    auto t = message->get_reply().get_long_long("time");
+    if (playing_)
+    {
+      behind_end_time_ = end_time_ - t;
+    }
+    else
+    {
+      current_time_ = t;
+    }
 
     seeking_ = false;
+    if (!receiving_)
+    {
+      yami::parameters params;
+      params.set_integer("session", session_);
+      AGENT.send_one_way(DISCOVERY.get("tv"), "tv", "play_session", params);
+      receiving_ = true;
+    }
 
     return remote_buf_pos_;
   }
@@ -393,8 +414,6 @@ namespace home_system
       session_ = -1;
 
       tmp_len_ = 0;
-      buffer_len_ = 0;
-      buffer_pos_ = 0;
       remote_buf_len_ = 0;
       remote_buf_pos_ = 0;
 
@@ -409,6 +428,43 @@ namespace home_system
 
   long long pvr_client::get_buffer_position()
   {
-    return remote_buf_pos_ - buffer_len_ + buffer_pos_;
+    lock_guard<mutex> lock(buffer_mutex_);
+    return remote_buf_pos_ - buffer_.size() * BUFSIZE;
+  }
+
+  long long pvr_client::get_buffer_time_start()
+  {
+    return begin_time_;
+  }
+
+  long long pvr_client::get_buffer_time_end()
+  {
+    return end_time_;
+  }
+
+  long long pvr_client::get_playing_time()
+  {
+    lock_guard<mutex> lock(buffer_mutex_);
+    if (playing_)
+    {
+      return end_time_ - behind_end_time_;
+    }
+    else
+    {
+      return current_time_;
+    }
+  }
+
+  bool pvr_client::is_timeshifting()
+  {
+    lock_guard<mutex> lock(buffer_mutex_);
+    if (playing_)
+    {
+      return behind_end_time_ == 0 ? false : true;
+    }
+    else
+    {
+      return false;
+    }
   }
 }
